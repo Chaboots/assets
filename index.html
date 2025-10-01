@@ -210,32 +210,34 @@
 
         async function loadCharacterModels() {
             const loader = new GLTFLoader();
-            const characterFiles = ['./models/Soldier_Female.gltf', './models/Soldier_Male.gltf'];
-    
-            for (let file of characterFiles) {
-                const gltf = await new Promise((resolve) => {
-                    loader.load(file, resolve);
-                });
-                characterModels.push(gltf);
-            }
-    
-            // Pick random character
-            const randomChar = characterModels[Math.floor(Math.random() * characterModels.length)];
-            player = randomChar.scene.clone();
-            player.scale.set(1, 1, 1);
-            player.rotation.y = Math.PI; // Face forward
-            player.position.set(0, 0, 0);
             
-            // Enable shadows
-            player.traverse((node) => {
-                if (node.isMesh) {
-                    node.castShadow = true;
-                    node.receiveShadow = true;
-                }
+            return new Promise((resolve, reject) => {
+                loader.load(
+                    './models/character_base.glb',
+                    function(gltf) {
+                        player = gltf.scene;
+                        player.scale.set(1, 1, 1);
+                        player.rotation.y = Math.PI;
+                        player.position.set(0, 0, 0);
+                        
+                        player.traverse((node) => {
+                            if (node.isMesh) {
+                                node.castShadow = true;
+                                node.receiveShadow = true;
+                            }
+                        });
+                        
+                        scene.add(player);
+                        console.log('Character loaded with', gltf.animations.length, 'animations');
+                        resolve();
+                    },
+                    undefined,
+                    function(error) {
+                        console.error('Error loading character:', error);
+                        reject(error);
+                    }
+                );
             });
-            scene.add(player);
-    
-            console.log('Character loaded with', randomChar.animations.length, 'animations');
         }
         
         function placeTree(x, z) {
