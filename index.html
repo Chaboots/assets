@@ -231,6 +231,12 @@
                 walk: './models/character_walk.glb',
                 run: './models/character_run.glb',
                 jump: './models/character_jump.glb'
+
+                // After the animations loop
+                animations.idle.setEffectiveTimeScale(1);
+                animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
+                animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
+                animations.jump.setEffectiveTimeScale(1);
             };
             
             // Load first animation to get character
@@ -279,7 +285,8 @@
         }
 
         function updatePlayer(delta) {
-            const moveSpeed = 10;
+            const moveSpeed = 10; // Current walk speed
+            const runSpeed = 20; // Add separate run speed
             const jumpForce = 8;
             const gravity = -20;
 
@@ -328,7 +335,10 @@
             if (isJumping) {
                 targetAction = animations.jump;
             } else if (isMoving) {
-                targetAction = keys['shift'] ? animations.run : animations.walk;
+                const speed = keys['shift'] ? runSpeed : moveSpeed;
+                const angle = Math.atan2(moveX, moveZ) + cameraAngleY;
+                playerVel.x = Math.sin(angle) * speed;
+                playerVel.z = Math.cos(angle) * speed;
             }
             
             if (targetAction !== currentAction) {
