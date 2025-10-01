@@ -232,12 +232,6 @@
                 run: './models/character_run.glb',
                 jump: './models/character_jump.glb'
             };
-
-            // After the animations loop
-            animations.idle.setEffectiveTimeScale(1);
-            animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
-            animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
-            animations.jump.setEffectiveTimeScale(1);
             
             // Load first animation to get character
             const idleGltf = await new Promise(resolve => loader.load(animFiles.idle, resolve));
@@ -269,6 +263,12 @@
             currentAction.play();
             
             console.log('Loaded animations:', Object.keys(animations));
+
+            // After the animations loop
+            animations.idle.setEffectiveTimeScale(1);
+            animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
+            animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
+            animations.jump.setEffectiveTimeScale(1);
         }
         
         function placeTree(x, z) {
