@@ -75,6 +75,7 @@
         let characterModels = [];
         let player = null;
         let camDistance = 12;
+        let mixer = null;
 
         async function init() {
             scene = new THREE.Scene();
@@ -241,6 +242,14 @@
                         });
                         
                         scene.add(player);
+
+                        // Setup animation mixer
+                        if (gltf.animations.length > 0) {
+                            mixer = new THREE.AnimationMixer(player);
+                            const idleAction = mixer.clipAction(gltf.animations[0]);
+                            idleAction.play();
+                        }
+                        
                         console.log('Character loaded with', gltf.animations.length, 'animations');
                         resolve();
                     },
@@ -317,6 +326,10 @@
             lastTime = time;
 
             updatePlayer(delta);
+
+            if (mixer) {
+                mixer.update(delta);
+            }
 
             const camHeight = 6;
             camera.position.x = playerPos.x - Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * camDistance;
