@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low Poly Forest</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        .info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 40px;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        Giant Low Poly Tree<br>
+        <br>
+        <strong>Controls:</strong><br>
+        Drag to rotate<br>
+        Scroll to zoom<br>
+        WASD to move<br>
+        Space to jump
+    </div>
+    <div class="loading" id="loading">Loading model...</div>
+
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        let scene, camera, renderer;
+        let trees = [];
+        let playerPos = { x: 0, z: 0, y: 2 };
+        let playerVel = { x: 0, z: 0, y: 0 };
+        let mouseDown = false;
+        let mouseX = 0, mouseY = 0;
+        let cameraAngleX = 0, cameraAngleY = 0;
+        let keys = {};
+        let treeModel = null;
+
+        async function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 1, 100);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(20, 30, 20);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.left = -50;
+            directionalLight.shadow.camera.right = 50;
+            directionalLight.shadow.camera.top = 50;
+            directionalLight.shadow.camera.bottom = -50;
+            scene.add(directionalLight);
+
+            const groundGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x7CB342 });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            
+            const positions = groundGeometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                positions.setY(i, Math.random() * 0.5);
+            }
+            groundGeometry.computeVertexNormals();
+            
+            scene.add(ground);
+
+            await loadTreeModel();
+
+            document.addEventListener('mousedown', (e) => {
+                mouseDown = true;
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!mouseDown) return;
+                const deltaX = e.clientX - mouseX;
+                const deltaY = e.clientY - mouseY;
+                cameraAngleY -= deltaX * 0.003;
+                cameraAngleX -= deltaY * 0.003;
+                cameraAngleX = Math.max(-Math.PI/3, Math.min(Math.PI/3, cameraAngleX));
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            
+            document.addEventListener('mouseup', () => mouseDown = false);
+            document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+            document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            animate();
+        }
+
+        async function loadTreeModel() {
+            const loader = new THREE.GLTFLoader();
+            // Using relative path since we're on the same domain
+            const modelUrl = './giant_low_poly_tree.glb';
+            
+            return new Promise((resolve, reject) => {
+                loader.load(
+                    modelUrl,
+                    function(gltf) {
+                        console.log('Model loaded successfully!');
+                        treeModel = gltf.scene;
+                        
+                        treeModel.traverse((node) => {
+                            if (node.isMesh) {
+                                node.castShadow = true;
+                                node.receiveShadow = true;
+                            }
+                        });
+
+                        treeModel.scale.set(0.5, 0.5, 0.5);
+
+                        for (let i = 0; i < 25; i++) {
+                            const x = (Math.random() - 0.5) * 150;
+                            const z = (Math.random() - 0.5) * 150;
+                            if (Math.sqrt(x*x + z*z) > 8) {
+                                placeTree(x, z);
+                            }
+                        }
+
+                        document.getElementById('loading').style.display = 'none';
+                        resolve();
+                    },
+                    function(xhr) {
+                        const percent = xhr.total > 0 ? (xhr.loaded / xhr.total * 100).toFixed(0) : '...';
+                        document.getElementById('loading').textContent = `Loading... ${percent}%`;
+                    },
+                    function(error) {
+                        console.error('Error loading model:', error);
+                        document.getElementById('loading').textContent = 'Error loading model. Check console.';
+                        reject(error);
+                    }
+                );
+            });
+        }
+
+        function placeTree(x, z) {
+            if (!treeModel) return;
+            
+            const tree = treeModel.clone();
+            tree.position.set(x, 0, z);
+            tree.rotation.y = Math.random() * Math.PI * 2;
+            const scale = 0.4 + Math.random() * 0.3;
+            tree.scale.set(scale, scale, scale);
+            
+            scene.add(tree);
+            trees.push(tree);
+        }
+
+        function updatePlayer(delta) {
+            const moveSpeed = 10;
+            const jumpForce = 8;
+            const gravity = -20;
+
+            let moveX = 0, moveZ = 0;
+            if (keys['w']) moveZ -= 1;
+            if (keys['s']) moveZ += 1;
+            if (keys['a']) moveX -= 1;
+            if (keys['d']) moveX += 1;
+
+            if (moveX || moveZ) {
+                const angle = Math.atan2(moveX, moveZ) + cameraAngleY;
+                playerVel.x = Math.sin(angle) * moveSpeed;
+                playerVel.z = Math.cos(angle) * moveSpeed;
+            } else {
+                playerVel.x *= 0.8;
+                playerVel.z *= 0.8;
+            }
+
+            if (keys[' '] && playerPos.y <= 2.1) {
+                playerVel.y = jumpForce;
+            }
+
+            playerVel.y += gravity * delta;
+
+            playerPos.x += playerVel.x * delta;
+            playerPos.z += playerVel.z * delta;
+            playerPos.y += playerVel.y * delta;
+
+            if (playerPos.y < 2) {
+                playerPos.y = 2;
+                playerVel.y = 0;
+            }
+
+            playerPos.x = Math.max(-95, Math.min(95, playerPos.x));
+            playerPos.z = Math.max(-95, Math.min(95, playerPos.z));
+        }
+
+        let lastTime = 0;
+        function animate(time = 0) {
+            requestAnimationFrame(animate);
+            
+            const delta = Math.min((time - lastTime) / 1000, 0.1);
+            lastTime = time;
+
+            updatePlayer(delta);
+
+            const camDistance = 12;
+            const camHeight = 4;
+            camera.position.x = playerPos.x - Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * camDistance;
+            camera.position.y = playerPos.y + camHeight + Math.sin(cameraAngleX) * camDistance;
+            camera.position.z = playerPos.z - Math.cos(cameraAngleY) * Math.cos(cameraAngleX) * camDistance;
+            camera.lookAt(playerPos.x, playerPos.y + 1, playerPos.z);
+
+            trees.forEach((tree, i) => {
+                tree.rotation.z = Math.sin(time * 0.0003 + i) * 0.02;
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
