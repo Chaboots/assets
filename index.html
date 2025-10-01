@@ -103,7 +103,7 @@
             scene.add(directionalLight);
 
             const groundGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
-            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x7CB342 });
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // brown
             const ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
