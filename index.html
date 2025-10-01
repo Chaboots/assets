@@ -222,8 +222,17 @@
             // Pick random character
             const randomChar = characterModels[Math.floor(Math.random() * characterModels.length)];
             player = randomChar.scene.clone();
-            player.scale.set(2, 2, 2);
+            player.scale.set(1, 1, 1);
+            player.rotation.y = Math.PI; // Face forward
             player.position.set(0, 0, 0);
+            
+            // Enable shadows
+            player.traverse((node) => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.receiveShadow = true;
+                }
+            });
             scene.add(player);
     
             console.log('Character loaded with', randomChar.animations.length, 'animations');
@@ -248,8 +257,8 @@
             const gravity = -20;
 
             let moveX = 0, moveZ = 0;
-            if (keys['w']) moveZ -= 1;
-            if (keys['s']) moveZ += 1;
+            if (keys['w']) moveZ += 1;
+            if (keys['s']) moveZ -= 1;
             if (keys['a']) moveX -= 1;
             if (keys['d']) moveX += 1;
 
