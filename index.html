@@ -231,13 +231,13 @@
                 walk: './models/character_walk.glb',
                 run: './models/character_run.glb',
                 jump: './models/character_jump.glb'
-
-                // After the animations loop
-                animations.idle.setEffectiveTimeScale(1);
-                animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
-                animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
-                animations.jump.setEffectiveTimeScale(1);
             };
+
+            // After the animations loop
+            animations.idle.setEffectiveTimeScale(1);
+            animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
+            animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
+            animations.jump.setEffectiveTimeScale(1);
             
             // Load first animation to get character
             const idleGltf = await new Promise(resolve => loader.load(animFiles.idle, resolve));
