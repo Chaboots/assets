@@ -257,18 +257,18 @@
                     animations[name] = mixer.clipAction(gltf.animations[0]);
                 }
             }
-            
-            // Start with idle
-            currentAction = animations.idle;
-            currentAction.play();
-            
-            console.log('Loaded animations:', Object.keys(animations));
 
             // After the animations loop
             animations.idle.setEffectiveTimeScale(1);
             animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
             animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
             animations.jump.setEffectiveTimeScale(1);
+            
+            // Start with idle
+            currentAction = animations.idle;
+            currentAction.play();
+            
+            console.log('Loaded animations:', Object.keys(animations));
         }
         
         function placeTree(x, z) {
