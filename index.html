@@ -72,6 +72,8 @@
         let cameraAngleX = 0, cameraAngleY = 0;
         let keys = {};
         let treeModel = null;
+        let characterModels = [];
+        let player = null;
 
         async function init() {
             scene = new THREE.Scene();
@@ -115,6 +117,8 @@
             scene.add(ground);
 
             await loadTreeModel();
+
+            await loadCharacterModels();
 
             // Disable right-click context menu
             document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -162,7 +166,7 @@
 
         async function loadTreeModel() {
             const loader = new GLTFLoader();
-            const modelUrl = './giant_low_poly_tree.glb';
+            const modelUrl = './models/giant_low_poly_tree.glb';
             
             return new Promise((resolve, reject) => {
                 loader.load(
@@ -204,6 +208,27 @@
             });
         }
 
+        async function loadCharacterModels() {
+            const loader = new GLTFLoader();
+            const characterFiles = ['./models/Soldier_Female.gltf', './models/Soldier_Male.gltf'];
+    
+            for (let file of characterFiles) {
+                const gltf = await new Promise((resolve) => {
+                    loader.load(file, resolve);
+                });
+                characterModels.push(gltf);
+            }
+    
+            // Pick random character
+            const randomChar = characterModels[Math.floor(Math.random() * characterModels.length)];
+            player = randomChar.scene.clone();
+            player.scale.set(2, 2, 2);
+            player.position.set(0, 0, 0);
+            scene.add(player);
+    
+            console.log('Character loaded with', randomChar.animations.length, 'animations');
+        }
+        
         function placeTree(x, z) {
             if (!treeModel) return;
             
@@ -254,6 +279,9 @@
 
             playerPos.x = Math.max(-95, Math.min(95, playerPos.x));
             playerPos.z = Math.max(-95, Math.min(95, playerPos.z));
+            if (player) {
+                player.position.set(playerPos.x, playerPos.y - 2, playerPos.z);
+            }
         }
 
         let lastTime = 0;
