@@ -76,6 +76,8 @@
         let player = null;
         let camDistance = 12;
         let mixer = null;
+        let animations = {};
+        let currentAction = null;
 
         async function init() {
             scene = new THREE.Scene();
@@ -224,42 +226,43 @@
 
         async function loadCharacterModels() {
             const loader = new GLTFLoader();
+            const animFiles = {
+                idle: './models/character_idle.glb',
+                walk: './models/character_walk.glb',
+                run: './models/character_run.glb',
+                jump: './models/character_jump.glb'
+            };
             
-            return new Promise((resolve, reject) => {
-                loader.load(
-                    './models/character_idle.glb',
-                    function(gltf) {
-                        player = gltf.scene;
-                        player.scale.set(1, 1, 1);
-                        player.rotation.y = Math.PI;
-                        player.position.set(0, 0, 0);
-                        
-                        player.traverse((node) => {
-                            if (node.isMesh) {
-                                node.castShadow = true;
-                                node.receiveShadow = true;
-                            }
-                        });
-                        
-                        scene.add(player);
-
-                        // Setup animation mixer
-                        if (gltf.animations.length > 0) {
-                            mixer = new THREE.AnimationMixer(player);
-                            const idleAction = mixer.clipAction(gltf.animations[0]);
-                            idleAction.play();
-                        }
-                        
-                        console.log('Character loaded with', gltf.animations.length, 'animations');
-                        resolve();
-                    },
-                    undefined,
-                    function(error) {
-                        console.error('Error loading character:', error);
-                        reject(error);
-                    }
-                );
+            // Load first animation to get character
+            const idleGltf = await new Promise(resolve => loader.load(animFiles.idle, resolve));
+            player = idleGltf.scene;
+            player.scale.set(0.01, 0.01, 0.01);
+            player.rotation.y = Math.PI;
+            player.position.set(0, 0, 0);
+            
+            player.traverse((node) => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.receiveShadow = true;
+                }
             });
+            
+            scene.add(player);
+            mixer = new THREE.AnimationMixer(player);
+            
+            // Load all animations
+            for (let [name, file] of Object.entries(animFiles)) {
+                const gltf = await new Promise(resolve => loader.load(file, resolve));
+                if (gltf.animations.length > 0) {
+                    animations[name] = mixer.clipAction(gltf.animations[0]);
+                }
+            }
+            
+            // Start with idle
+            currentAction = animations.idle;
+            currentAction.play();
+            
+            console.log('Loaded animations:', Object.keys(animations));
         }
         
         function placeTree(x, z) {
@@ -315,6 +318,23 @@
             if (player) {
                 player.position.set(playerPos.x, playerPos.y - 2, playerPos.z);
                 player.rotation.y = cameraAngleY + Math.PI;
+            }
+
+            // Animation switching
+            const isMoving = moveX !== 0 || moveZ !== 0;
+            const isJumping = playerPos.y > 2.1;
+            let targetAction = animations.idle;
+            
+            if (isJumping) {
+                targetAction = animations.jump;
+            } else if (isMoving) {
+                targetAction = keys['shift'] ? animations.run : animations.walk;
+            }
+            
+            if (targetAction !== currentAction) {
+                currentAction.fadeOut(0.2);
+                targetAction.reset().fadeIn(0.2).play();
+                currentAction = targetAction;
             }
         }
 
