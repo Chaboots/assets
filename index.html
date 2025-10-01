@@ -196,13 +196,13 @@
 
                         treeModel.scale.set(0.5, 0.5, 0.5);
 
-                        for (let i = 0; i < 25; i++) {
-                            const x = (Math.random() - 0.5) * 150;
-                            const z = (Math.random() - 0.5) * 150;
-                            if (Math.sqrt(x*x + z*z) > 8) {
-                                placeTree(x, z);
-                            }
-                        }
+                        // for (let i = 0; i < 25; i++) {
+                        //     const x = (Math.random() - 0.5) * 150;
+                        //     const z = (Math.random() - 0.5) * 150;
+                        //     if (Math.sqrt(x*x + z*z) > 8) {
+                        //         placeTree(x, z);
+                        //     }
+                        // }
 
                         document.getElementById('loading').style.display = 'none';
                         resolve();
