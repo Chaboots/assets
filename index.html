@@ -42,9 +42,10 @@
         Giant Low Poly Tree<br>
         <br>
         <strong>Controls:</strong><br>
-        Drag to rotate<br>
-        WASD to move<br>
-        Space to jump
+        Left-click drag: Rotate camera<br>
+        Right-click: Action (check console)<br>
+        WASD: Move<br>
+        Space: Jump
     </div>
     <div class="loading" id="loading">Loading model...</div>
 
@@ -66,6 +67,7 @@
         let playerPos = { x: 0, z: 0, y: 2 };
         let playerVel = { x: 0, z: 0, y: 0 };
         let mouseDown = false;
+        let mouseButton = 0;
         let mouseX = 0, mouseY = 0;
         let cameraAngleX = 0, cameraAngleY = 0;
         let keys = {};
@@ -114,14 +116,25 @@
 
             await loadTreeModel();
 
+            // Disable right-click context menu
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
+
             document.addEventListener('mousedown', (e) => {
                 mouseDown = true;
+                mouseButton = e.button;
                 mouseX = e.clientX;
                 mouseY = e.clientY;
+                
+                if (e.button === 2) {
+                    // Right-click action - you can customize this
+                    console.log('Right-click action at position:', mouseX, mouseY);
+                    // Add your game action here (shoot, interact, etc.)
+                }
             });
             
             document.addEventListener('mousemove', (e) => {
-                if (!mouseDown) return;
+                if (!mouseDown || mouseButton !== 0) return; // Only rotate on left-click
+                
                 const deltaX = e.clientX - mouseX;
                 const deltaY = e.clientY - mouseY;
                 cameraAngleY -= deltaX * 0.003;
@@ -131,7 +144,10 @@
                 mouseY = e.clientY;
             });
             
-            document.addEventListener('mouseup', () => mouseDown = false);
+            document.addEventListener('mouseup', () => {
+                mouseDown = false;
+            });
+            
             document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
             document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
