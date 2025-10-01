@@ -261,8 +261,8 @@
             let moveX = 0, moveZ = 0;
             if (keys['w']) moveZ += 1;
             if (keys['s']) moveZ -= 1;
-            if (keys['a']) moveX -= 1;
-            if (keys['d']) moveX += 1;
+            if (keys['a']) moveX += 1;
+            if (keys['d']) moveX -= 1;
 
             if (moveX || moveZ) {
                 const angle = Math.atan2(moveX, moveZ) + cameraAngleY;
