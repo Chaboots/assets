@@ -45,6 +45,7 @@
         Left-click drag: Rotate camera<br>
         Right-click: Action (check console)<br>
         WASD: Move<br>
+        Shift: Run<br>
         Space: Jump
     </div>
     <div class="loading" id="loading">Loading model...</div>
@@ -128,14 +129,12 @@
                 mouseY = e.clientY;
                 
                 if (e.button === 2) {
-                    // Right-click action - you can customize this
                     console.log('Right-click action at position:', mouseX, mouseY);
-                    // Add your game action here (shoot, interact, etc.)
                 }
             });
             
             document.addEventListener('mousemove', (e) => {
-                if (!mouseDown || mouseButton !== 0) return; // Only rotate on left-click
+                if (!mouseDown || mouseButton !== 0) return;
                 
                 const deltaX = e.clientX - mouseX;
                 const deltaY = e.clientY - mouseY;
@@ -179,25 +178,16 @@
                         console.log('Model loaded successfully!');
                         treeModel = gltf.scene;
 
-                        // Fix material rendering
                         treeModel.traverse((node) => {
                             if (node.isMesh) {
                                 node.castShadow = true;
                                 node.receiveShadow = true;
-                                // Ensure materials render properly
                                 if (node.material) {
                                     node.material.needsUpdate = true;
                                 }
                             }
                         });
                         
-                        treeModel.traverse((node) => {
-                            if (node.isMesh) {
-                                node.castShadow = true;
-                                node.receiveShadow = true;
-                            }
-                        });
-
                         treeModel.scale.set(0.5, 0.5, 0.5);
 
                         for (let i = 0; i < 25; i++) {
@@ -230,10 +220,9 @@
                 idle: './models/character_idle.glb',
                 walk: './models/character_walk.glb',
                 run: './models/character_run.glb',
-                jump: './models/character_jump.glb'
+                jump: './models/character_jump.glb' // Updated to new jump animation
             };
             
-            // Load first animation to get character
             const idleGltf = await new Promise(resolve => loader.load(animFiles.idle, resolve));
             player = idleGltf.scene;
             player.scale.set(1, 1, 1);
@@ -250,24 +239,21 @@
             scene.add(player);
             mixer = new THREE.AnimationMixer(player);
             
-            // Load all animations
             for (let [name, file] of Object.entries(animFiles)) {
                 const gltf = await new Promise(resolve => loader.load(file, resolve));
                 if (gltf.animations.length > 0) {
                     animations[name] = mixer.clipAction(gltf.animations[0]);
+                    animations[name].play(); // Play all for blending
+                    animations[name].weight = name === 'idle' ? 1 : 0; // Start with idle
                 }
             }
 
-            // After the animations loop
             animations.idle.setEffectiveTimeScale(1);
-            animations.walk.setEffectiveTimeScale(1.2); // Speed up walk animation
-            animations.run.setEffectiveTimeScale(1.5); // Speed up run animation
-            animations.jump.setEffectiveTimeScale(1);
+            animations.walk.setEffectiveTimeScale(1.2);
+            animations.run.setEffectiveTimeScale(1.5);
+            animations.jump.setEffectiveTimeScale(1.2); // Adjust for new jump, tweak if needed
             
-            // Start with idle
             currentAction = animations.idle;
-            currentAction.play();
-            
             console.log('Loaded animations:', Object.keys(animations));
         }
         
@@ -285,10 +271,11 @@
         }
 
         function updatePlayer(delta) {
-            const moveSpeed = 10; // Current walk speed
-            const runSpeed = 20; // Add separate run speed
+            const moveSpeed = 10;
+            const runSpeed = 20;
             const jumpForce = 8;
             const gravity = -20;
+            const blendDuration = 0.15; // Slightly faster for responsive jump
 
             let moveX = 0, moveZ = 0;
             if (keys['w']) moveZ += 1;
@@ -296,17 +283,17 @@
             if (keys['a']) moveX += 1;
             if (keys['d']) moveX -= 1;
 
-            // Determine movement and animation state
             const isMoving = moveX !== 0 || moveZ !== 0;
             const isRunning = isMoving && keys['shift'];
             const isJumping = playerPos.y > 2.1;
 
-            // Set movement speed and direction
+            // Calculate movement
+            let currentSpeed = 0;
             if (isMoving) {
-                const speed = isRunning ? runSpeed : moveSpeed;
+                currentSpeed = isRunning ? runSpeed : moveSpeed;
                 const angle = Math.atan2(moveX, moveZ) + cameraAngleY;
-                playerVel.x = Math.sin(angle) * speed;
-                playerVel.z = Math.cos(angle) * speed;
+                playerVel.x = Math.sin(angle) * currentSpeed;
+                playerVel.z = Math.cos(angle) * currentSpeed;
             } else {
                 playerVel.x *= 0.8;
                 playerVel.z *= 0.8;
@@ -323,13 +310,11 @@
             playerPos.z += playerVel.z * delta;
             playerPos.y += playerVel.y * delta;
 
-            // Ground collision
             if (playerPos.y < 2) {
                 playerPos.y = 2;
                 playerVel.y = 0;
             }
 
-            // Clamp position to boundaries
             playerPos.x = Math.max(-95, Math.min(95, playerPos.x));
             playerPos.z = Math.max(-95, Math.min(95, playerPos.z));
             if (player) {
@@ -337,21 +322,43 @@
                 player.rotation.y = cameraAngleY;
             }
 
-            // Animation switching
-            let targetAction = animations.idle;
+            // Animation blending
+            let idleWeight = 0, walkWeight = 0, runWeight = 0, jumpWeight = 0;
+            const speedMagnitude = Math.sqrt(playerVel.x ** 2 + playerVel.z ** 2);
+            const maxSpeed = runSpeed;
+
             if (isJumping) {
-                targetAction = animations.jump;
-            } else if (isRunning) {
-                targetAction = animations.run;
+                // Blend jump based on vertical position for smoother transitions
+                const jumpProgress = Math.min((playerPos.y - 2) / 2, 1); // 0 to 1 based on height
+                jumpWeight = Math.sin(jumpProgress * Math.PI); // Peaks at jump apex
+                if (isMoving) {
+                    const speedRatio = Math.min(speedMagnitude / maxSpeed, 1);
+                    walkWeight = isRunning ? (1 - jumpWeight) * (1 - speedRatio) : (1 - jumpWeight);
+                    runWeight = isRunning ? (1 - jumpWeight) * speedRatio : 0;
+                } else {
+                    idleWeight = 1 - jumpWeight;
+                }
             } else if (isMoving) {
-                targetAction = animations.walk;
+                const speedRatio = Math.min(speedMagnitude / maxSpeed, 1);
+                walkWeight = isRunning ? (1 - speedRatio) : 1;
+                runWeight = isRunning ? speedRatio : 0;
+            } else {
+                idleWeight = 1;
             }
 
-            // Transition to new animation
-            if (targetAction !== currentAction) {
-                currentAction.fadeOut(0.2);
-                targetAction.reset().fadeIn(0.2).play();
-                currentAction = targetAction;
+            // Smoothly adjust weights
+            animations.idle.weight += (idleWeight - animations.idle.weight) * delta / blendDuration;
+            animations.walk.weight += (walkWeight - animations.walk.weight) * delta / blendDuration;
+            animations.run.weight += (runWeight - animations.run.weight) * delta / blendDuration;
+            animations.jump.weight += (jumpWeight - animations.jump.weight) * delta / blendDuration;
+
+            // Normalize weights
+            const totalWeight = animations.idle.weight + animations.walk.weight + animations.run.weight + animations.jump.weight;
+            if (totalWeight > 0) {
+                animations.idle.weight /= totalWeight;
+                animations.walk.weight /= totalWeight;
+                animations.run.weight /= totalWeight;
+                animations.jump.weight /= totalWeight;
             }
         }
 
