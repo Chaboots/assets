@@ -250,7 +250,7 @@
             animations.idle.setEffectiveTimeScale(1);
             animations.walk.setEffectiveTimeScale(1.2);
             animations.run.setEffectiveTimeScale(1.5);
-            animations.jump.setEffectiveTimeScale(1.0); // Natural speed for new jump
+            animations.jump.setEffectiveTimeScale(1.5); // Natural speed for new jump
             
             currentAction = animations.idle;
             console.log('Loaded animations:', Object.keys(animations));
@@ -274,7 +274,7 @@
             const runSpeed = 20;
             const jumpForce = 8;
             const gravity = -20;
-            const blendDuration = 0.2; // Smoother transitions
+            const blendDuration = 0.15; // Smoother transitions
 
             let moveX = 0, moveZ = 0;
             if (keys['w']) moveZ += 1;
