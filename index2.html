@@ -108,7 +108,7 @@
             scene.add(directionalLight);
 
             const groundGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
-            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // brown
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
             const ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
@@ -119,7 +119,6 @@
 
             await loadCharacterModels();
 
-            // Disable right-click context menu
             document.addEventListener('contextmenu', (e) => e.preventDefault());
 
             document.addEventListener('mousedown', (e) => {
@@ -220,7 +219,7 @@
                 idle: './models/character_idle.glb',
                 walk: './models/character_walk.glb',
                 run: './models/character_run.glb',
-                jump: './models/character_jump_new.glb' // Updated to new jump animation
+                jump: './models/character_jump_new.glb'
             };
             
             const idleGltf = await new Promise(resolve => loader.load(animFiles.idle, resolve));
@@ -243,15 +242,15 @@
                 const gltf = await new Promise(resolve => loader.load(file, resolve));
                 if (gltf.animations.length > 0) {
                     animations[name] = mixer.clipAction(gltf.animations[0]);
-                    animations[name].play(); // Play all for blending
-                    animations[name].weight = name === 'idle' ? 1 : 0; // Start with idle
+                    animations[name].play();
+                    animations[name].weight = name === 'idle' ? 1 : 0;
                 }
             }
 
             animations.idle.setEffectiveTimeScale(1);
             animations.walk.setEffectiveTimeScale(1.2);
             animations.run.setEffectiveTimeScale(1.5);
-            animations.jump.setEffectiveTimeScale(1.2); // Adjust for new jump, tweak if needed
+            animations.jump.setEffectiveTimeScale(1.0); // Natural speed for new jump
             
             currentAction = animations.idle;
             console.log('Loaded animations:', Object.keys(animations));
@@ -275,7 +274,7 @@
             const runSpeed = 20;
             const jumpForce = 8;
             const gravity = -20;
-            const blendDuration = 0.15; // Slightly faster for responsive jump
+            const blendDuration = 0.2; // Smoother transitions
 
             let moveX = 0, moveZ = 0;
             if (keys['w']) moveZ += 1;
@@ -328,9 +327,8 @@
             const maxSpeed = runSpeed;
 
             if (isJumping) {
-                // Blend jump based on vertical position for smoother transitions
-                const jumpProgress = Math.min((playerPos.y - 2) / 2, 1); // 0 to 1 based on height
-                jumpWeight = Math.sin(jumpProgress * Math.PI); // Peaks at jump apex
+                const jumpProgress = Math.min((playerPos.y - 2) / 1.6, 1); // Matches max height ~3.6
+                jumpWeight = Math.sin(jumpProgress * Math.PI) * 0.9; // Slightly less dominance
                 if (isMoving) {
                     const speedRatio = Math.min(speedMagnitude / maxSpeed, 1);
                     walkWeight = isRunning ? (1 - jumpWeight) * (1 - speedRatio) : (1 - jumpWeight);
