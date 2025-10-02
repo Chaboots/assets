@@ -297,9 +297,10 @@
             if (keys['d']) moveX -= 1;
 
             if (moveX || moveZ) {
+                const speed = keys['shift'] ? runSpeed : moveSpeed;
                 const angle = Math.atan2(moveX, moveZ) + cameraAngleY;
-                playerVel.x = Math.sin(angle) * moveSpeed;
-                playerVel.z = Math.cos(angle) * moveSpeed;
+                playerVel.x = Math.sin(angle) * speed;
+                playerVel.z = Math.cos(angle) * speed;
             } else {
                 playerVel.x *= 0.8;
                 playerVel.z *= 0.8;
@@ -335,10 +336,7 @@
             if (isJumping) {
                 targetAction = animations.jump;
             } else if (isMoving) {
-                const speed = keys['shift'] ? runSpeed : moveSpeed;
-                const angle = Math.atan2(moveX, moveZ) + cameraAngleY;
-                playerVel.x = Math.sin(angle) * speed;
-                playerVel.z = Math.cos(angle) * speed;
+                targetAction = keys['shift'] ? animations.run : animations.walk;
             }
             
             if (targetAction !== currentAction) {
