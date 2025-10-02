@@ -219,7 +219,7 @@
                 idle: './models/character_idle.glb',
                 walk: './models/character_walk.glb',
                 run: './models/character_run.glb',
-                jump: './models/character_jump.glb'
+                jump: './models/character_jump_new.glb' // Switch to './models/character_jump.glb' for original
             };
             
             const idleGltf = await new Promise(resolve => loader.load(animFiles.idle, resolve));
@@ -250,7 +250,7 @@
             animations.idle.setEffectiveTimeScale(1);
             animations.walk.setEffectiveTimeScale(1.2);
             animations.run.setEffectiveTimeScale(1.5);
-            animations.jump.setEffectiveTimeScale(1.5); // Natural speed for new jump
+            animations.jump.setEffectiveTimeScale(1.5); // Speed up for ~0.4s jump
             
             currentAction = animations.idle;
             console.log('Loaded animations:', Object.keys(animations));
@@ -274,7 +274,7 @@
             const runSpeed = 20;
             const jumpForce = 8;
             const gravity = -20;
-            const blendDuration = 0.15; // Smoother transitions
+            const blendDuration = 0.12; // Snappier transitions
 
             let moveX = 0, moveZ = 0;
             if (keys['w']) moveZ += 1;
@@ -328,7 +328,7 @@
 
             if (isJumping) {
                 const jumpProgress = Math.min((playerPos.y - 2) / 1.6, 1); // Matches max height ~3.6
-                jumpWeight = Math.sin(jumpProgress * Math.PI) * 1.1; // Slightly less dominance
+                jumpWeight = Math.sin(jumpProgress * Math.PI) * 1.5; // Stronger jump influence
                 if (isMoving) {
                     const speedRatio = Math.min(speedMagnitude / maxSpeed, 1);
                     walkWeight = isRunning ? (1 - jumpWeight) * (1 - speedRatio) : (1 - jumpWeight);
