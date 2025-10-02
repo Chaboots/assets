@@ -328,7 +328,7 @@
 
             if (isJumping) {
                 const jumpProgress = Math.min((playerPos.y - 2) / 1.6, 1); // Matches max height ~3.6
-                jumpWeight = Math.sin(jumpProgress * Math.PI) * 0.9; // Slightly less dominance
+                jumpWeight = Math.sin(jumpProgress * Math.PI) * 1.1; // Slightly less dominance
                 if (isMoving) {
                     const speedRatio = Math.min(speedMagnitude / maxSpeed, 1);
                     walkWeight = isRunning ? (1 - jumpWeight) * (1 - speedRatio) : (1 - jumpWeight);
