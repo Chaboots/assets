@@ -242,8 +242,8 @@
             for (let intersect of intersects) {
                 if (intersect.object.name === 'ground' || intersect.object.userData.isTile) {
                     const point = intersect.point;
-                    const snappedX = Math.round(point.x / GRID_SIZE) * GRID_SIZE;
-                    const snappedZ = Math.round(point.z / GRID_SIZE) * GRID_SIZE;
+                    const snappedX = Math.floor(point.x / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+                    const snappedZ = Math.floor(point.z / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
                     previewTile.position.set(snappedX, 0.05, snappedZ);
                     break;
                 }
@@ -374,7 +374,6 @@
         }
 
         function updatePlayer(delta) {
-            if (buildMode) return;
 
             const moveSpeed = 10;
             const runSpeed = 20;
