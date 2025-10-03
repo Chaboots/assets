@@ -1007,20 +1007,52 @@
 				});
 			});
 			
-			// Make occluding objects transparent
+			// Collect positions of occluding objects
+			const occludingPositions = [];
 			intersects.forEach(intersect => {
 				const obj = intersect.object;
-				// Skip if it's the player or any part of the player
 				let isPlayer = false;
 				obj.traverseAncestors(ancestor => {
 					if (ancestor === player) isPlayer = true;
 				});
 				
 				if (obj.isMesh && obj.material && !isPlayer && obj !== player) {
+					occludingPositions.push(intersect.point);
 					obj.material.transparent = true;
 					obj.material.opacity = 0.3;
 				}
 			});
+			
+			// Make nearby walls/doors transparent too
+			const occlusionRadius = 4; // Adjust this value to control how wide the effect is
+			
+			if (occludingPositions.length > 0) {
+				placedWalls.forEach(wall => {
+					for (let occPos of occludingPositions) {
+						const dist = wall.position.distanceTo(occPos);
+						if (dist < occlusionRadius) {
+							wall.material.transparent = true;
+							wall.material.opacity = 0.3;
+							break;
+						}
+					}
+				});
+				
+				placedDoors.forEach(door => {
+					for (let occPos of occludingPositions) {
+						const dist = door.position.distanceTo(occPos);
+						if (dist < occlusionRadius) {
+							door.traverse(node => {
+								if (node.isMesh && node.material) {
+									node.material.transparent = true;
+									node.material.opacity = 0.3;
+								}
+							});
+							break;
+						}
+					}
+				});
+			}
 		}
 
         async function loadTreeModel() {
