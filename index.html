@@ -27,6 +27,9 @@
         .build-mode {
             background: rgba(50, 150, 50, 0.8);
         }
+        .wall-mode {
+            background: rgba(139, 69, 19, 0.8);
+        }
         .loading {
             position: absolute;
             top: 50%;
@@ -38,6 +41,45 @@
             border-radius: 8px;
             font-size: 18px;
         }
+        .build-panel {
+            position: absolute;
+            top: 150px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .build-panel.active {
+            display: block;
+        }
+        .build-button {
+            display: block;
+            width: 120px;
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(100, 100, 100, 0.8);
+            color: white;
+            border: 2px solid transparent;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .build-button:hover {
+            background: rgba(120, 120, 120, 0.9);
+        }
+        .build-button.selected {
+            border-color: #00ff00;
+            background: rgba(50, 150, 50, 0.8);
+        }
+        .build-button.wall.selected {
+            border-color: #8B4513;
+            background: rgba(139, 69, 19, 0.8);
+        }
+        .build-button.door.selected {
+            border-color: #CD853F;
+            background: rgba(205, 133, 63, 0.8);
+        }
     </style>
 </head>
 <body>
@@ -45,14 +87,22 @@
         Giant Low Poly Tree<br>
         <br>
         <strong>Controls:</strong><br>
-        Left-click drag: Rotate camera<br>
-        Right-click: Action<br>
+        Right-click drag: Rotate camera<br>
         WASD: Move<br>
         Shift: Run<br>
         Space: Jump<br>
+        E: Open/Close door<br>
         Tab: Toggle Build Mode
     </div>
     <div class="loading" id="loading">Loading model...</div>
+    
+    <div class="build-panel" id="buildPanel">
+        <div style="color: white; margin-bottom: 10px; font-weight: bold;">BUILD MODE</div>
+        <button class="build-button" id="floorButton">Floor</button>
+        <button class="build-button wall" id="wallButton">Wall</button>
+        <button class="build-button door" id="doorButton">Door</button>
+        <div style="color: white; margin-top: 10px; font-size: 12px;" id="wallOrientationText"></div>
+    </div>
 
     <script type="importmap">
     {
@@ -67,7 +117,7 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        let scene, camera, renderer;
+		let scene, camera, renderer, ground;
         let trees = [];
         let playerPos = { x: 0, z: 0, y: 2 };
         let playerVel = { x: 0, z: 0, y: 0 };
@@ -84,13 +134,30 @@
         let currentAction = null;
 
         // Building system variables
-        let buildMode = false;
+		let doorAnimations = new Map(); // Track door animation states
+		let doorHandleSide = 'right'; // 'left' or 'right'
+        let buildMode = null;
         let buildGrid = null;
         let previewTile = null;
+        let previewWall = null;
+        let previewDoor = null;
+        let wallOrientation = 'horizontal';
         let placedTiles = [];
+        let placedWalls = [];
+        let placedDoors = [];
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
-        const GRID_SIZE = 1;
+        let dragStart = null;
+        let isDragging = false;
+        let dragPreviewTiles = [];
+        let dragPreviewWalls = [];
+        let nearestDoor = null;
+        
+        const GRID_SIZE = 2;
+        const WALL_THICKNESS = 0.1;
+        const WALL_HEIGHT = 3.0;
+        const DOOR_WIDTH = 2;
+        const DOOR_HEIGHT = 3.0;
 
         async function init() {
             scene = new THREE.Scene();
@@ -121,7 +188,7 @@
 
             const groundGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
             const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+			ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
             ground.name = 'ground';
@@ -129,6 +196,8 @@
 
             createBuildGrid();
             createPreviewTile();
+            createPreviewWall();
+            createPreviewDoor();
 
             await loadTreeModel();
             await loadCharacterModels();
@@ -141,29 +210,52 @@
                 mouseX = e.clientX;
                 mouseY = e.clientY;
                 
-                if (buildMode && e.button === 0) {
-                    placeTile();
-                } else if (e.button === 2) {
-                    console.log('Right-click action at position:', mouseX, mouseY);
+                if (e.button === 0) {
+                    if (buildMode === 'floor') {
+                        const snappedPos = previewTile.position.clone();
+                        dragStart = { x: snappedPos.x, z: snappedPos.z };
+                        isDragging = true;
+                    } else if (buildMode === 'wall') {
+                        const snappedPos = previewWall.position.clone();
+                        dragStart = { 
+                            x: snappedPos.x, 
+                            z: snappedPos.z, 
+                            orientation: wallOrientation 
+                        };
+                        isDragging = true;
+                    } else if (buildMode === 'door') {
+                        placeDoor();
+                    }
                 }
             });
             
             document.addEventListener('mousemove', (e) => {
+                const deltaX = e.clientX - mouseX;
+                const deltaY = e.clientY - mouseY;
+                
                 mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
                 mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-                if (!buildMode && mouseDown && mouseButton === 0) {
-                    const deltaX = e.clientX - mouseX;
-                    const deltaY = e.clientY - mouseY;
-                    cameraAngleY -= deltaX * 0.003;
-                    cameraAngleX += deltaY * 0.003;
-                    cameraAngleX = Math.max(-Math.PI/3, Math.min(Math.PI/3, cameraAngleX));
-                    mouseX = e.clientX;
-                    mouseY = e.clientY;
+                if (mouseDown && mouseButton === 2) {
+                    cameraAngleY -= deltaX * 0.005;
+                    cameraAngleX += deltaY * 0.005;
+                    cameraAngleX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, cameraAngleX));
                 }
+                
+                mouseX = e.clientX;
+                mouseY = e.clientY;
             });
             
             document.addEventListener('mouseup', () => {
+                if (isDragging && dragStart) {
+                    if (buildMode === 'floor') {
+                        placeDraggedTiles();
+                    } else if (buildMode === 'wall') {
+                        placeDraggedWalls();
+                    }
+                    isDragging = false;
+                    dragStart = null;
+                }
                 mouseDown = false;
             });
             
@@ -173,6 +265,17 @@
                 if (e.key.toLowerCase() === 'tab') {
                     e.preventDefault();
                     toggleBuildMode();
+				} else if (e.key.toLowerCase() === 'r' && buildMode === 'wall') {
+					e.preventDefault();
+					wallOrientation = wallOrientation === 'horizontal' ? 'vertical' : 'horizontal';
+					updateWallPreview();
+					updateWallOrientationText();
+				} else if (e.key.toLowerCase() === 'r' && buildMode === 'door') {
+					e.preventDefault();
+					cycleDoorOrientation();
+                } else if (e.key.toLowerCase() === 'e' && !buildMode) {
+                    e.preventDefault();
+                    toggleNearestDoor();
                 }
             });
             
@@ -194,16 +297,52 @@
 
             animate();
         }
+        
+        document.getElementById('floorButton').addEventListener('click', () => {
+            selectBuildType('floor');
+        });
+
+        document.getElementById('wallButton').addEventListener('click', () => {
+            selectBuildType('wall');
+        });
+
+        document.getElementById('doorButton').addEventListener('click', () => {
+            selectBuildType('door');
+        });
 
         function createBuildGrid() {
-            const gridSize = 50;
-            const divisions = gridSize;
+            buildGrid = new THREE.Group();
+            buildGrid.visible = false;
+            scene.add(buildGrid);
             
-            const gridHelper = new THREE.GridHelper(gridSize, divisions, 0x00ff00, 0x00ff00);
-            gridHelper.position.y = 0.01;
-            gridHelper.visible = false;
-            scene.add(gridHelper);
-            buildGrid = gridHelper;
+            const gridSize = 100;
+            const step = 2;
+            const material = new THREE.LineBasicMaterial({ 
+                color: 0x00ff00,
+                transparent: true
+            });
+            
+            for (let x = -gridSize; x <= gridSize; x += step) {
+                for (let z = -gridSize; z <= gridSize; z += step) {
+                    const vGeo = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(x, 0.01, z),
+                        new THREE.Vector3(x, 0.01, z + step)
+                    ]);
+                    const vLine = new THREE.Line(vGeo, material.clone());
+                    vLine.userData.centerX = x;
+                    vLine.userData.centerZ = z + step / 2;
+                    buildGrid.add(vLine);
+                    
+                    const hGeo = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(x, 0.01, z),
+                        new THREE.Vector3(x + step, 0.01, z)
+                    ]);
+                    const hLine = new THREE.Line(hGeo, material.clone());
+                    hLine.userData.centerX = x + step / 2;
+                    hLine.userData.centerZ = z;
+                    buildGrid.add(hLine);
+                }
+            }
         }
 
         function createPreviewTile() {
@@ -218,61 +357,671 @@
             scene.add(previewTile);
         }
 
-        function toggleBuildMode() {
-            buildMode = !buildMode;
-            buildGrid.visible = buildMode;
-            previewTile.visible = buildMode;
-            
-            const infoPanel = document.getElementById('infoPanel');
-            if (buildMode) {
-                infoPanel.classList.add('build-mode');
-                infoPanel.innerHTML = '<strong>BUILD MODE</strong><br><br>Left-click: Place tile<br>Tab: Exit build mode';
-            } else {
-                infoPanel.classList.remove('build-mode');
-                infoPanel.innerHTML = 'Giant Low Poly Tree<br><br><strong>Controls:</strong><br>Left-click drag: Rotate camera<br>Right-click: Action<br>WASD: Move<br>Shift: Run<br>Space: Jump<br>Tab: Toggle Build Mode';
-            }
+        function createPreviewWall() {
+            const geometry = new THREE.BoxGeometry(GRID_SIZE, WALL_HEIGHT, WALL_THICKNESS);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0x8B4513,
+                transparent: true,
+                opacity: 0.5
+            });
+            previewWall = new THREE.Mesh(geometry, material);
+            previewWall.visible = false;
+            scene.add(previewWall);
         }
 
-        function updatePreviewPosition() {
-            if (!buildMode) return;
+        function createPreviewDoor() {
+            previewDoor = new THREE.Group();
+            
+            const frameMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x654321,
+                transparent: true,
+                opacity: 0.5
+            });
+            
+            const leftPost = new THREE.Mesh(
+                new THREE.BoxGeometry(WALL_THICKNESS, DOOR_HEIGHT, WALL_THICKNESS),
+                frameMaterial
+            );
+            leftPost.position.set(-DOOR_WIDTH/2, DOOR_HEIGHT/2, 0);
+            previewDoor.add(leftPost);
+            
+            const rightPost = new THREE.Mesh(
+                new THREE.BoxGeometry(WALL_THICKNESS, DOOR_HEIGHT, WALL_THICKNESS),
+                frameMaterial
+            );
+            rightPost.position.set(DOOR_WIDTH/2, DOOR_HEIGHT/2, 0);
+            previewDoor.add(rightPost);
+            
+            const topBeam = new THREE.Mesh(
+                new THREE.BoxGeometry(DOOR_WIDTH, WALL_THICKNESS, WALL_THICKNESS),
+                frameMaterial
+            );
+            topBeam.position.set(0, DOOR_HEIGHT - WALL_THICKNESS/2, 0);
+            previewDoor.add(topBeam);
+            
+			const doorMaterial = new THREE.MeshStandardMaterial({ 
+				color: 0x8B4513,
+				transparent: true,
+				opacity: 0.5
+			});
+			const doorPanel = new THREE.Mesh(
+				new THREE.BoxGeometry(DOOR_WIDTH - WALL_THICKNESS * 2, DOOR_HEIGHT - WALL_THICKNESS, 0.05),
+				doorMaterial
+			);
+			doorPanel.position.set(0, DOOR_HEIGHT/2, 0);
+			doorPanel.userData.isDoorPanel = true;
+			previewDoor.add(doorPanel);
+            
+			const handleGeo = new THREE.BoxGeometry(0.05, 0.15, 0.15);
 
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(scene.children, true);
+			// Handle on front
+			const handleFront = new THREE.Mesh(handleGeo, frameMaterial);
+			handleFront.name = 'doorHandleFront';
+			previewDoor.add(handleFront);
 
-            for (let intersect of intersects) {
-                if (intersect.object.name === 'ground' || intersect.object.userData.isTile) {
-                    const point = intersect.point;
-                    const snappedX = Math.floor(point.x / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
-                    const snappedZ = Math.floor(point.z / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
-                    previewTile.position.set(snappedX, 0.05, snappedZ);
-                    break;
+			// Handle on back
+			const handleBack = new THREE.Mesh(handleGeo, frameMaterial);
+			handleBack.name = 'doorHandleBack';
+			previewDoor.add(handleBack);
+
+			previewDoor.userData.handleFront = handleFront;
+			previewDoor.userData.handleBack = handleBack;
+			updateDoorHandlePosition(previewDoor);
+            
+            previewDoor.visible = false;
+            scene.add(previewDoor);
+        }
+
+        function updateWallPreview() {
+            if (!previewWall) return;
+            
+            scene.remove(previewWall);
+            
+            if (wallOrientation === 'horizontal') {
+                const geometry = new THREE.BoxGeometry(GRID_SIZE, WALL_HEIGHT, WALL_THICKNESS);
+                previewWall.geometry.dispose();
+                previewWall.geometry = geometry;
+            } else {
+                const geometry = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, GRID_SIZE);
+                previewWall.geometry.dispose();
+                previewWall.geometry = geometry;
+            }
+            
+            scene.add(previewWall);
+        }
+
+		function updateDoorPreview() {
+			if (!previewDoor) return;
+			
+			if (wallOrientation === 'horizontal') {
+				previewDoor.rotation.y = 0;
+			} else {
+				previewDoor.rotation.y = Math.PI / 2;
+			}
+			
+			updateDoorHandlePosition(previewDoor);
+		}
+		
+		function updateDoorHandlePosition(doorObj) {
+			const handleFront = doorObj.userData.handleFront;
+			const handleBack = doorObj.userData.handleBack;
+			if (!handleFront || !handleBack) return;
+			
+			if (doorHandleSide === 'right') {
+				handleFront.position.set(DOOR_WIDTH/2 - 0.3, DOOR_HEIGHT/2, 0.1);
+				handleBack.position.set(DOOR_WIDTH/2 - 0.3, DOOR_HEIGHT/2, -0.1);
+			} else {
+				handleFront.position.set(-DOOR_WIDTH/2 + 0.3, DOOR_HEIGHT/2, 0.1);
+				handleBack.position.set(-DOOR_WIDTH/2 + 0.3, DOOR_HEIGHT/2, -0.1);
+			}
+		}
+		
+		function cycleDoorOrientation() {
+			if (doorHandleSide === 'right') {
+				doorHandleSide = 'left';
+			} else {
+				doorHandleSide = 'right';
+				wallOrientation = wallOrientation === 'horizontal' ? 'vertical' : 'horizontal';
+			}
+			updateDoorPreview();
+			updateWallOrientationText();
+		}
+
+        function toggleBuildMode() {
+            const panel = document.getElementById('buildPanel');
+            const infoPanel = document.getElementById('infoPanel');
+            const isActive = panel.classList.contains('active');
+            
+            if (!isActive) {
+                buildGrid.visible = true;
+                panel.classList.add('active');
+                buildMode = 'floor';
+                selectBuildType('floor');
+                infoPanel.innerHTML = 'Giant Low Poly Tree<br><br><strong>BUILD MODE ACTIVE</strong><br><br>Select floor, wall, or door from panel<br>Tab: Exit build mode';
+            } else {
+                buildMode = null;
+                buildGrid.visible = false;
+                previewTile.visible = false;
+                previewWall.visible = false;
+                previewDoor.visible = false;
+                panel.classList.remove('active');
+                document.getElementById('floorButton').classList.remove('selected');
+                document.getElementById('wallButton').classList.remove('selected');
+                document.getElementById('doorButton').classList.remove('selected');
+                document.getElementById('wallOrientationText').textContent = '';
+                infoPanel.innerHTML = 'Giant Low Poly Tree<br><br><strong>Controls:</strong><br>Right-click drag: Rotate camera<br>WASD: Move<br>Shift: Run<br>Space: Jump<br>E: Open/Close door<br>Tab: Toggle Build Mode';
+            }
+        }
+        
+        function selectBuildType(type) {
+            buildMode = type;
+            
+            const floorBtn = document.getElementById('floorButton');
+            const wallBtn = document.getElementById('wallButton');
+            const doorBtn = document.getElementById('doorButton');
+            
+            floorBtn.classList.remove('selected');
+            wallBtn.classList.remove('selected');
+            doorBtn.classList.remove('selected');
+            previewTile.visible = false;
+            previewWall.visible = false;
+            previewDoor.visible = false;
+            document.getElementById('wallOrientationText').textContent = '';
+            
+            if (type === 'floor') {
+                floorBtn.classList.add('selected');
+                previewTile.visible = true;
+            } else if (type === 'wall') {
+                wallBtn.classList.add('selected');
+                previewWall.visible = true;
+                updateWallOrientationText();
+			} else if (type === 'door') {
+				doorBtn.classList.add('selected');
+				previewDoor.visible = true;
+				updateDoorPreview(); // Add this line
+				updateWallOrientationText();
+			}
+        }
+        
+		function updateWallOrientationText() {
+			const text = document.getElementById('wallOrientationText');
+			if (buildMode === 'door') {
+				text.textContent = 'Press R to rotate\nOrientation: ' + wallOrientation + '\nHandle: ' + doorHandleSide;
+			} else {
+				text.textContent = 'Press R to rotate\nOrientation: ' + wallOrientation;
+			}
+		}
+
+		function updatePreviewPosition() {
+			if (!buildMode) return;
+
+			raycaster.setFromCamera(mouse, camera);
+			
+			// Add more lenient raycaster settings
+			raycaster.near = 0.1;
+			raycaster.far = 1000;
+			
+			const intersects = raycaster.intersectObject(ground, false);
+			
+			console.log('Intersects:', intersects.length, intersects[0]?.point);
+			
+			if (intersects.length > 0) {
+				const point = intersects[0].point;
+					
+				if (buildMode === 'floor') {
+					const snappedX = Math.floor(point.x / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+					const snappedZ = Math.floor(point.z / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+					previewTile.position.set(snappedX, 0.05, snappedZ);
+				} else if (buildMode === 'wall') {
+					if (wallOrientation === 'horizontal') {
+						const snappedX = Math.floor(point.x / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+						const snappedZ = Math.round(point.z / GRID_SIZE) * GRID_SIZE;
+						previewWall.position.set(snappedX, WALL_HEIGHT / 2, snappedZ);
+					} else {
+						const snappedX = Math.round(point.x / GRID_SIZE) * GRID_SIZE;
+						const snappedZ = Math.floor(point.z / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+						previewWall.position.set(snappedX, WALL_HEIGHT / 2, snappedZ);
+					}
+				} else if (buildMode === 'door') {
+					if (wallOrientation === 'horizontal') {
+						const snappedX = Math.floor(point.x / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+						const snappedZ = Math.round(point.z / GRID_SIZE) * GRID_SIZE;
+						previewDoor.position.set(snappedX, 0, snappedZ);
+					} else {
+						const snappedX = Math.round(point.x / GRID_SIZE) * GRID_SIZE;
+						const snappedZ = Math.floor(point.z / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+						previewDoor.position.set(snappedX, 0, snappedZ);
+					}
+				}
+			}
+		}
+
+        function updateDragPreview() {
+            dragPreviewTiles.forEach(tile => scene.remove(tile));
+            dragPreviewTiles = [];
+            dragPreviewWalls.forEach(wall => scene.remove(wall));
+            dragPreviewWalls = [];
+
+            if (!isDragging || !dragStart) return;
+
+            if (buildMode === 'floor') {
+                const endPos = previewTile.position;
+                const minX = Math.min(dragStart.x, endPos.x);
+                const maxX = Math.max(dragStart.x, endPos.x);
+                const minZ = Math.min(dragStart.z, endPos.z);
+                const maxZ = Math.max(dragStart.z, endPos.z);
+
+                for (let x = minX; x <= maxX; x += GRID_SIZE) {
+                    for (let z = minZ; z <= maxZ; z += GRID_SIZE) {
+                        const geometry = new THREE.BoxGeometry(GRID_SIZE, 0.1, GRID_SIZE);
+                        const material = new THREE.MeshStandardMaterial({ 
+                            color: 0x00ff00,
+                            transparent: true,
+                            opacity: 0.5
+                        });
+                        const tile = new THREE.Mesh(geometry, material);
+                        tile.position.set(x, 0.05, z);
+                        scene.add(tile);
+                        dragPreviewTiles.push(tile);
+                    }
+                }
+            } else if (buildMode === 'wall') {
+                const endPos = previewWall.position;
+                
+                if (dragStart.orientation === 'horizontal') {
+                    const minX = Math.min(dragStart.x, endPos.x);
+                    const maxX = Math.max(dragStart.x, endPos.x);
+                    const z = dragStart.z;
+                    
+                    for (let x = minX; x <= maxX; x += GRID_SIZE) {
+                        const geometry = new THREE.BoxGeometry(GRID_SIZE, WALL_HEIGHT, WALL_THICKNESS);
+                        const material = new THREE.MeshStandardMaterial({ 
+                            color: 0x8B4513,
+                            transparent: true,
+                            opacity: 0.5
+                        });
+                        const wall = new THREE.Mesh(geometry, material);
+                        wall.position.set(x, WALL_HEIGHT / 2, z);
+                        scene.add(wall);
+                        dragPreviewWalls.push(wall);
+                    }
+                } else {
+                    const minZ = Math.min(dragStart.z, endPos.z);
+                    const maxZ = Math.max(dragStart.z, endPos.z);
+                    const x = dragStart.x;
+                    
+                    for (let z = minZ; z <= maxZ; z += GRID_SIZE) {
+                        const geometry = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, GRID_SIZE);
+                        const material = new THREE.MeshStandardMaterial({ 
+                            color: 0x8B4513,
+                            transparent: true,
+                            opacity: 0.5
+                        });
+                        const wall = new THREE.Mesh(geometry, material);
+                        wall.position.set(x, WALL_HEIGHT / 2, z);
+                        scene.add(wall);
+                        dragPreviewWalls.push(wall);
+                    }
                 }
             }
         }
 
-        function placeTile() {
-            const snappedPos = previewTile.position.clone();
+        function placeDraggedTiles() {
+            dragPreviewTiles.forEach(previewTileObj => {
+                const snappedPos = previewTileObj.position.clone();
+                
+                const existing = placedTiles.find(tile => 
+                    Math.abs(tile.position.x - snappedPos.x) < 0.01 && 
+                    Math.abs(tile.position.z - snappedPos.z) < 0.01
+                );
+                if (existing) return;
+
+                const geometry = new THREE.BoxGeometry(GRID_SIZE, 0.1, GRID_SIZE);
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: 0x808080,
+                    roughness: 0.8
+                });
+                const tile = new THREE.Mesh(geometry, material);
+                tile.position.copy(snappedPos);
+                tile.castShadow = true;
+                tile.receiveShadow = true;
+                tile.userData.isTile = true;
+                
+                scene.add(tile);
+                placedTiles.push(tile);
+            });
+
+            dragPreviewTiles.forEach(tile => scene.remove(tile));
+            dragPreviewTiles = [];
+        }
+
+        function placeDraggedWalls() {
+            dragPreviewWalls.forEach(previewWallObj => {
+                const snappedPos = previewWallObj.position.clone();
+                const orientation = dragStart.orientation;
+                
+                const existing = placedWalls.find(wall => 
+                    Math.abs(wall.position.x - snappedPos.x) < 0.01 && 
+                    Math.abs(wall.position.z - snappedPos.z) < 0.01 &&
+                    wall.userData.orientation === orientation
+                );
+                if (existing) return;
+
+                let geometry;
+                if (orientation === 'horizontal') {
+                    geometry = new THREE.BoxGeometry(GRID_SIZE, WALL_HEIGHT, WALL_THICKNESS);
+                } else {
+                    geometry = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, GRID_SIZE);
+                }
+                
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: 0x654321,
+                    roughness: 0.8
+                });
+                const wall = new THREE.Mesh(geometry, material);
+                wall.position.copy(snappedPos);
+                wall.castShadow = true;
+                wall.receiveShadow = true;
+                wall.userData.isWall = true;
+                wall.userData.orientation = orientation;
+                
+                scene.add(wall);
+                placedWalls.push(wall);
+            });
+
+            dragPreviewWalls.forEach(wall => scene.remove(wall));
+            dragPreviewWalls = [];
+        }
+
+        function placeDoor() {
+            const snappedPos = previewDoor.position.clone();
+            const orientation = wallOrientation;
             
-            // Check if tile already exists at this position
-            const existing = placedTiles.find(tile => 
-                tile.position.x === snappedPos.x && tile.position.z === snappedPos.z
+            const existing = placedDoors.find(door => 
+                Math.abs(door.position.x - snappedPos.x) < 0.01 && 
+                Math.abs(door.position.z - snappedPos.z) < 0.01
             );
             if (existing) return;
 
-            const geometry = new THREE.BoxGeometry(GRID_SIZE, 0.1, GRID_SIZE);
-            const material = new THREE.MeshStandardMaterial({ 
-                color: 0x808080,
+            const doorGroup = new THREE.Group();
+            doorGroup.position.copy(snappedPos);
+            
+            const frameMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x654321,
                 roughness: 0.8
             });
-            const tile = new THREE.Mesh(geometry, material);
-            tile.position.copy(snappedPos);
-            tile.castShadow = true;
-            tile.receiveShadow = true;
-            tile.userData.isTile = true;
             
-            scene.add(tile);
-            placedTiles.push(tile);
+            const leftPost = new THREE.Mesh(
+                new THREE.BoxGeometry(WALL_THICKNESS, DOOR_HEIGHT, WALL_THICKNESS),
+                frameMaterial
+            );
+            leftPost.position.set(-DOOR_WIDTH/2, DOOR_HEIGHT/2, 0);
+            leftPost.castShadow = true;
+            leftPost.receiveShadow = true;
+            doorGroup.add(leftPost);
+            
+            const rightPost = new THREE.Mesh(
+                new THREE.BoxGeometry(WALL_THICKNESS, DOOR_HEIGHT, WALL_THICKNESS),
+                frameMaterial
+            );
+            rightPost.position.set(DOOR_WIDTH/2, DOOR_HEIGHT/2, 0);
+            rightPost.castShadow = true;
+            rightPost.receiveShadow = true;
+            doorGroup.add(rightPost);
+            
+            const topBeam = new THREE.Mesh(
+                new THREE.BoxGeometry(DOOR_WIDTH, WALL_THICKNESS, WALL_THICKNESS),
+                frameMaterial
+            );
+            topBeam.position.set(0, DOOR_HEIGHT - WALL_THICKNESS/2, 0);
+            topBeam.castShadow = true;
+            topBeam.receiveShadow = true;
+            doorGroup.add(topBeam);
+            
+			const doorPanelGroup = new THREE.Group();
+			if (doorHandleSide === 'right') {
+				doorPanelGroup.position.set(-DOOR_WIDTH/2 + WALL_THICKNESS, 0, 0);
+			} else {
+				doorPanelGroup.position.set(DOOR_WIDTH/2 - WALL_THICKNESS, 0, 0);
+			}
+            
+            const doorMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x8B4513,
+                roughness: 0.8
+            });
+			const doorPanel = new THREE.Mesh(
+				new THREE.BoxGeometry(DOOR_WIDTH - WALL_THICKNESS, DOOR_HEIGHT - WALL_THICKNESS, 0.05),
+				doorMaterial
+			);
+			if (doorHandleSide === 'right') {
+				doorPanel.position.set((DOOR_WIDTH - WALL_THICKNESS * 2) / 2, DOOR_HEIGHT/2, 0);
+			} else {
+				doorPanel.position.set(-(DOOR_WIDTH - WALL_THICKNESS * 2) / 2, DOOR_HEIGHT/2, 0);
+			}
+            doorPanel.castShadow = true;
+            doorPanel.receiveShadow = true;
+            doorPanelGroup.add(doorPanel);
+            
+			const handleGeo = new THREE.BoxGeometry(0.05, 0.15, 0.15);
+
+			// Handle on front
+			const handleFront = new THREE.Mesh(handleGeo, frameMaterial);
+			handleFront.name = 'doorHandleFront';
+			if (doorHandleSide === 'right') {
+				handleFront.position.set(DOOR_WIDTH - WALL_THICKNESS * 3, DOOR_HEIGHT/2, 0.1);
+			} else {
+				handleFront.position.set(-(DOOR_WIDTH - WALL_THICKNESS * 3), DOOR_HEIGHT/2, 0.1);
+			}
+			handleFront.castShadow = true;
+			doorPanelGroup.add(handleFront);
+
+			// Handle on back
+			const handleBack = new THREE.Mesh(handleGeo, frameMaterial);
+			handleBack.name = 'doorHandleBack';
+			if (doorHandleSide === 'right') {
+				handleBack.position.set(DOOR_WIDTH - WALL_THICKNESS * 3, DOOR_HEIGHT/2, -0.1);
+			} else {
+				handleBack.position.set(-(DOOR_WIDTH - WALL_THICKNESS * 3), DOOR_HEIGHT/2, -0.1);
+			}
+			handleBack.castShadow = true;
+			doorPanelGroup.add(handleBack);
+            
+            doorGroup.add(doorPanelGroup);
+            
+            if (orientation === 'vertical') {
+                doorGroup.rotation.y = Math.PI / 2;
+            }
+            
+            doorGroup.userData.isDoor = true;
+            doorGroup.userData.orientation = orientation;
+            doorGroup.userData.isOpen = false;
+            doorGroup.userData.doorPanel = doorPanelGroup;
+            
+			doorGroup.userData.handleSide = doorHandleSide;
+			doorAnimations.set(doorGroup, {
+				targetAngle: 0,
+				currentAngle: 0,
+				animating: false
+			});
+			
+            scene.add(doorGroup);
+            placedDoors.push(doorGroup);
         }
+
+		function toggleNearestDoor() {
+			let closest = null;
+			let minDist = 3;
+			
+			for (let door of placedDoors) {
+				const dist = Math.sqrt(
+					Math.pow(door.position.x - playerPos.x, 2) +
+					Math.pow(door.position.z - playerPos.z, 2)
+				);
+				if (dist < minDist) {
+					minDist = dist;
+					closest = door;
+				}
+			}
+			
+			if (closest) {
+				const isOpen = closest.userData.isOpen;
+				const animData = doorAnimations.get(closest);
+				
+				if (isOpen) {
+					animData.targetAngle = 0;
+					closest.userData.isOpen = false;
+				} else {
+					const orientation = closest.userData.orientation;
+					const handleSide = closest.userData.handleSide || 'right';
+					
+					// Get player position relative to door
+					const dx = playerPos.x - closest.position.x;
+					const dz = playerPos.z - closest.position.z;
+					
+					let openAway;
+					
+					if (orientation === 'horizontal') {
+						// Door normal points in +/-Z direction
+						// If player is at positive Z, door should open positive
+						if (handleSide === 'right') {
+							openAway = dz > 0 ? Math.PI / 2 : -Math.PI / 2;
+						} else {
+							openAway = dz > 0 ? -Math.PI / 2 : Math.PI / 2;
+						}
+					} else {
+						// Door normal points in +/-X direction (after 90° rotation)
+						// If player is at positive X, door should open positive
+						if (handleSide === 'right') {
+							openAway = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
+						} else {
+							openAway = dx > 0 ? -Math.PI / 2 : Math.PI / 2;
+						}
+					}
+					
+					animData.targetAngle = openAway;
+					closest.userData.isOpen = true;
+				}
+				animData.animating = true;
+			}
+		}
+
+        function checkWallCollision(newX, newZ) {
+            const playerRadius = 0.3;
+            
+            for (let wall of placedWalls) {
+                const wallX = wall.position.x;
+                const wallZ = wall.position.z;
+                const orientation = wall.userData.orientation;
+                
+                if (orientation === 'horizontal') {
+                    const wallMinX = wallX - GRID_SIZE / 2;
+                    const wallMaxX = wallX + GRID_SIZE / 2;
+                    const wallMinZ = wallZ - WALL_THICKNESS / 2;
+                    const wallMaxZ = wallZ + WALL_THICKNESS / 2;
+                    
+                    if (newX + playerRadius > wallMinX && newX - playerRadius < wallMaxX &&
+                        newZ + playerRadius > wallMinZ && newZ - playerRadius < wallMaxZ) {
+                        return true;
+                    }
+                } else {
+                    const wallMinX = wallX - WALL_THICKNESS / 2;
+                    const wallMaxX = wallX + WALL_THICKNESS / 2;
+                    const wallMinZ = wallZ - GRID_SIZE / 2;
+                    const wallMaxZ = wallZ + GRID_SIZE / 2;
+                    
+                    if (newX + playerRadius > wallMinX && newX - playerRadius < wallMaxX &&
+                        newZ + playerRadius > wallMinZ && newZ - playerRadius < wallMaxZ) {
+                        return true;
+                    }
+                }
+            }
+            
+            for (let door of placedDoors) {
+                if (door.userData.isOpen) continue;
+                
+                const doorX = door.position.x;
+                const doorZ = door.position.z;
+                const orientation = door.userData.orientation;
+                
+                if (orientation === 'horizontal') {
+                    const doorMinX = doorX - DOOR_WIDTH / 2;
+                    const doorMaxX = doorX + DOOR_WIDTH / 2;
+                    const doorMinZ = doorZ - WALL_THICKNESS / 2;
+                    const doorMaxZ = doorZ + WALL_THICKNESS / 2;
+                    
+                    if (newX + playerRadius > doorMinX && newX - playerRadius < doorMaxX &&
+                        newZ + playerRadius > doorMinZ && newZ - playerRadius < doorMaxZ) {
+                        return true;
+                    }
+                } else {
+                    const doorMinX = doorX - WALL_THICKNESS / 2;
+                    const doorMaxX = doorX + WALL_THICKNESS / 2;
+                    const doorMinZ = doorZ - DOOR_WIDTH / 2;
+                    const doorMaxZ = doorZ + DOOR_WIDTH / 2;
+                    
+                    if (newX + playerRadius > doorMinX && newX - playerRadius < doorMaxX &&
+                        newZ + playerRadius > doorMinZ && newZ - playerRadius < doorMaxZ) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        }
+
+		function updateObjectTransparency() {
+			const cameraPos = camera.position;
+			const playerPosVec = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+			
+			// Create a ray from camera to player
+			const direction = new THREE.Vector3().subVectors(playerPosVec, cameraPos).normalize();
+			const distance = cameraPos.distanceTo(playerPosVec);
+			
+			raycaster.set(cameraPos, direction);
+			raycaster.far = distance;
+			
+			// Check all scene objects
+			const intersects = raycaster.intersectObjects(scene.children, true);
+			
+			// Reset all objects to opaque first
+			trees.forEach(tree => {
+				tree.traverse(node => {
+					if (node.isMesh && node.material) {
+						node.material.transparent = true;
+						node.material.opacity = 1;
+					}
+				});
+			});
+			
+			placedWalls.forEach(wall => {
+				wall.material.transparent = true;
+				wall.material.opacity = 1;
+			});
+			
+			placedDoors.forEach(door => {
+				door.traverse(node => {
+					if (node.isMesh && node.material) {
+						node.material.transparent = true;
+						node.material.opacity = 1;
+					}
+				});
+			});
+			
+			// Make occluding objects transparent
+			intersects.forEach(intersect => {
+				const obj = intersect.object;
+				// Skip if it's the player or any part of the player
+				let isPlayer = false;
+				obj.traverseAncestors(ancestor => {
+					if (ancestor === player) isPlayer = true;
+				});
+				
+				if (obj.isMesh && obj.material && !isPlayer && obj !== player) {
+					obj.material.transparent = true;
+					obj.material.opacity = 0.3;
+				}
+			});
+		}
 
         async function loadTreeModel() {
             const loader = new GLTFLoader();
@@ -374,7 +1123,6 @@
         }
 
         function updatePlayer(delta) {
-
             const moveSpeed = 10;
             const runSpeed = 20;
             const jumpForce = 8;
@@ -402,12 +1150,34 @@
 
             playerVel.y += gravity * delta;
 
-            playerPos.x += playerVel.x * delta;
-            playerPos.z += playerVel.z * delta;
+            const newX = playerPos.x + playerVel.x * delta;
+            const newZ = playerPos.z + playerVel.z * delta;
+
+            if (!checkWallCollision(newX, playerPos.z)) {
+                playerPos.x = newX;
+            }
+            if (!checkWallCollision(playerPos.x, newZ)) {
+                playerPos.z = newZ;
+            }
+
             playerPos.y += playerVel.y * delta;
 
-            if (playerPos.y < 2) {
-                playerPos.y = 2;
+            let onTile = false;
+            const playerGridX = Math.floor(playerPos.x / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+            const playerGridZ = Math.floor(playerPos.z / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2;
+
+            for (let tile of placedTiles) {
+                if (Math.abs(tile.position.x - playerGridX) < 0.1 && 
+                    Math.abs(tile.position.z - playerGridZ) < 0.1) {
+                    onTile = true;
+                    break;
+                }
+            }
+
+            const groundHeight = onTile ? 2.1 : 2;
+
+            if (playerPos.y < groundHeight) {
+                playerPos.y = groundHeight;
                 playerVel.y = 0;
             }
 
@@ -443,18 +1213,67 @@
             const delta = Math.min((time - lastTime) / 1000, 0.1);
             lastTime = time;
 
-            updatePlayer(delta);
-            updatePreviewPosition();
+			updatePlayer(delta);
+			updateObjectTransparency();
+			updatePreviewPosition();
+            updateDragPreview();
+			
+			// Animate doors
+			for (let [door, animData] of doorAnimations) {
+				if (animData.animating) {
+					const diff = animData.targetAngle - animData.currentAngle;
+					if (Math.abs(diff) > 0.01) {
+						animData.currentAngle += diff * delta * 5;
+						door.userData.doorPanel.rotation.y = animData.currentAngle;
+					} else {
+						animData.currentAngle = animData.targetAngle;
+						door.userData.doorPanel.rotation.y = animData.currentAngle;
+						animData.animating = false;
+					}
+				}
+			}
+            
+            if (buildMode && buildGrid) {
+                const maxDistance = 20;
+                const maxDistSq = maxDistance * maxDistance;
+                
+                buildGrid.children.forEach(line => {
+                    const dx = line.userData.centerX - playerPos.x;
+                    const dz = line.userData.centerZ - playerPos.z;
+                    const distSq = dx * dx + dz * dz;
+                    
+                    if (distSq > maxDistSq) {
+                        line.visible = false;
+                    } else {
+                        line.visible = true;
+                        const fadeStart = 15;
+                        const fadeStartSq = fadeStart * fadeStart;
+                        
+                        if (distSq > fadeStartSq) {
+                            const distance = Math.sqrt(distSq);
+                            line.material.opacity = 1 - (distance - fadeStart) / (maxDistance - fadeStart);
+                        } else {
+                            line.material.opacity = 1;
+                        }
+                    }
+                });
+            }
 
             if (mixer) {
                 mixer.update(delta);
             }
 
-            const camHeight = 6;
-            camera.position.x = playerPos.x - Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * camDistance;
-            camera.position.y = playerPos.y + camHeight + Math.sin(cameraAngleX) * camDistance;
-            camera.position.z = playerPos.z - Math.cos(cameraAngleY) * Math.cos(cameraAngleX) * camDistance;
-            camera.lookAt(playerPos.x, playerPos.y + 1, playerPos.z);
+            const camHeight = 0;
+            const lookAtY = playerPos.y + 1;
+            const targetPoint = new THREE.Vector3(playerPos.x, lookAtY, playerPos.z);
+
+            const horizontalDist = camDistance * Math.cos(cameraAngleX);
+            const verticalDist = camDistance * Math.sin(cameraAngleX);
+
+            camera.position.x = playerPos.x - Math.sin(cameraAngleY) * horizontalDist;
+            camera.position.y = lookAtY + camHeight + verticalDist;
+            camera.position.z = playerPos.z - Math.cos(cameraAngleY) * horizontalDist;
+            camera.lookAt(targetPoint);
 
             trees.forEach((tree, i) => {
                 tree.rotation.z = Math.sin(time * 0.0003 + i) * 0.02;
